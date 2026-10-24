@@ -29,10 +29,16 @@ jobs:
           set -o pipefail
           gradle assembleDebug --no-daemon 2>&1 | tee build.log
 
-      - name: Report build errors as annotations
+      - name: Report SrunClient errors as annotations
         if: failure()
         run: |
-          grep -E "^e: " build.log | head -20 | sed 's/%/%25/g' | while IFS= read -r line; do echo "::error file=build.log::$line"; done
+          echo "::error file=build.log::TOTAL_E=$(grep -cE '^e: ' build.log)"
+          grep -E "^e: .*SrunClient\.kt" build.log | head -8 | sed 's/%/%25/g' | while IFS= read -r line; do echo "::error file=build.log::$line"; done
+
+      - name: Report last Kotlin errors as annotations
+        if: failure()
+        run: |
+          grep -E "^e: " build.log | tail -8 | sed 's/%/%25/g' | while IFS= read -r line; do echo "::error file=build.log::LAST|$line"; done
 
       - name: Report build log tail as annotations
         if: failure()
