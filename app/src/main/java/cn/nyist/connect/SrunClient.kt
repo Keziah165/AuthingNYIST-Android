@@ -12,7 +12,7 @@ import javax.crypto.spec.SecretKeySpec
 /**
  * NYIST 校园网 srun（深澜）认证协议的 Kotlin 实现。
  *
- * 移植自 GUYU2233/AuthingNYIST（internal/app/portal.go 与 libauth/*），
+ * 移植自 GUYU2233/AuthingNYIST（internal/app/portal.go 与 libauth 包），
  * 上游协议实现源自 Palvef/AuthingNYIST，灵感来自 z4yx/GoAuthing。
  * 本项目遵循 GPL-3.0 许可证。
  */
