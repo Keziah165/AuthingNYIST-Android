@@ -1,7 +1,7 @@
 package cn.nyist.connect
 
 import android.app.Application
-import android.app.JobInfo
+import android.app.job.JobInfo
 import android.app.job.JobScheduler
 import android.content.ComponentName
 import android.content.Context
