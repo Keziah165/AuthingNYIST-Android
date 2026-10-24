@@ -28,7 +28,7 @@ class App : Application() {
     override fun onCreate() {
         super.onCreate()
         try {
-            val cm = getSystemService(ConnectivityManager::class.java)
+            val cm = getSystemService(ConnectivityManager::class.java) ?: return
             cm.registerNetworkCallback(
                 NetworkRequest.Builder()
                     .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)

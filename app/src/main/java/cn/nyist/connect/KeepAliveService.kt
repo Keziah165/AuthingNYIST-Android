@@ -72,6 +72,7 @@ class KeepAliveService : Service() {
     override fun onCreate() {
         super.onCreate()
         nm = getSystemService(NotificationManager::class.java)
+            ?: throw IllegalStateException("NotificationManager 不可用")
         cm = getSystemService(ConnectivityManager::class.java)
         createChannel()
         updateNotification("正在启动…")
