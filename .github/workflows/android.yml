@@ -32,8 +32,12 @@ jobs:
       - name: Report build errors as annotations
         if: failure()
         run: |
-          grep -E "^(e: |w: .*|FAILURE|\* What went wrong|> |Caused by)" build.log | head -60 | \
-            sed 's/%/%25/g' | while IFS= read -r line; do echo "::error file=build.log::$line"; done
+          grep -E "^e: " build.log | head -20 | sed 's/%/%25/g' | while IFS= read -r line; do echo "::error file=build.log::$line"; done
+
+      - name: Report build log tail as annotations
+        if: failure()
+        run: |
+          tail -20 build.log | sed 's/%/%25/g' | while IFS= read -r line; do echo "::error file=build.log::TAIL|$line"; done
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
