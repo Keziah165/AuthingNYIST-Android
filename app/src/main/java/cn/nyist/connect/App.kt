@@ -11,6 +11,7 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.os.Build
 import android.util.Log
+import kotlin.concurrent.thread
 
 /**
  * 全局 Application：注册 Wi-Fi 网络回调。
@@ -27,12 +28,18 @@ class App : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // 启动时把校园网交给系统托管：之后进入覆盖范围由系统自动入网
+        val cfg = ConfigStore.load(this)
+        if (cfg.autoConnect && cfg.hasCredentials()) {
+            thread(name = "wifi-suggestion") { WifiSuggestion.apply(this, cfg) }
+        }
         try {
             val cm = getSystemService(ConnectivityManager::class.java) ?: return
+            // 只按「Wi-Fi 已关联」判断，不能要求 NET_CAPABILITY_INTERNET：
+            // 校园网在认证通过前并不具备互联网能力，加了该条件回调永远不触发。
             cm.registerNetworkCallback(
                 NetworkRequest.Builder()
                     .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
-                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
                     .build(),
                 object : ConnectivityManager.NetworkCallback() {
                     override fun onAvailable(network: Network) {

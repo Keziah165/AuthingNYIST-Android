@@ -48,6 +48,16 @@ class MainActivity : AppCompatActivity() {
         b.btnDisconnect.setOnClickListener { onDisconnect() }
         b.btnCheck.setOnClickListener { onCheck() }
 
+        // 打开「自动保持在线」时立即把校园网交给系统托管（改密码后重新提交）
+        b.swAutoKeepOnline.setOnCheckedChangeListener { _, checked ->
+            if (!checked) return@setOnCheckedChangeListener
+            requestAutoPermissions()
+            val c = runCatching { configFromUi() }.getOrNull() ?: return@setOnCheckedChangeListener
+            if (c.hasCredentials()) {
+                Thread { WifiSuggestion.apply(this, c) }.start()
+            }
+        }
+
         // 保活服务状态回显
         lifecycleScope.launch {
             KeepAliveService.statusText.collect { text ->
@@ -60,10 +70,16 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 打开应用时若开启自动连接，自动认证一次
+        // 打开应用时若开启自动连接，自动认证一次（不在校园网范围则静默跳过）
         if (cfg.autoConnect && cfg.hasCredentials() && !autoConnectDone) {
             autoConnectDone = true
-            doWork { runCatching { Srun.connect(ConfigStore.load(this@MainActivity)) } }
+            Thread { WifiSuggestion.apply(this, cfg) }.start()
+            if (hasWifiNetwork()) {
+                doWork {
+                    runCatching { Srun.connect(ConfigStore.load(this@MainActivity)) }
+                        .onSuccess { KeepAliveService.start(this@MainActivity) }
+                }
+            }
         }
     }
 
@@ -105,13 +121,53 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "请先填写账号和密码", Toast.LENGTH_LONG).show()
             return
         }
-        if (cfg.autoConnect) requestNotificationPermission()
+        if (cfg.autoConnect) requestAutoPermissions()
         doWork {
-            runCatching { Srun.connect(ConfigStore.load(this@MainActivity)) }
-                .onSuccess {
-                    if (b.swAutoKeepOnline.isChecked) KeepAliveService.start(this@MainActivity)
+            val cur = ConfigStore.load(this@MainActivity)
+            // 开启自动保持在线时，先把校园网交给系统托管，断连/回到学校由系统自动入网
+            if (cur.autoConnect && WifiSuggestion.hasPermission(this@MainActivity)) {
+                WifiSuggestion.apply(this@MainActivity, cur)?.let {
+                    return@doWork Result.failure(IllegalStateException(it))
                 }
+            }
+            if (!hasWifiNetwork() && !waitForWifi(10_000)) {
+                withContext(Dispatchers.Main) { openWifiPanel() }
+                return@doWork Result.failure(
+                    IllegalStateException("已打开 Wi-Fi 设置，请连接校园网 nyist-tec 后会自动认证")
+                )
+            }
+            val s = Srun.connect(cur)
+            if (cur.autoConnect) KeepAliveService.start(this@MainActivity)
+            Result.success(s)
         }
+    }
+
+    /** 是否存在已关联的 Wi-Fi（认证前没有互联网，不能用 INTERNET 能力判断）。 */
+    private fun hasWifiNetwork(): Boolean {
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return false
+        val net = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(net) ?: return false
+        return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+    }
+
+    /** 等系统把建议网络连上（自动入网通常需要几秒）。 */
+    private suspend fun waitForWifi(timeoutMs: Long): Boolean {
+        var waited = 0L
+        while (waited < timeoutMs) {
+            if (hasWifiNetwork()) return true
+            kotlinx.coroutines.delay(500)
+            waited += 500
+        }
+        return hasWifiNetwork()
+    }
+
+    private fun openWifiPanel() {
+        val intent = if (Build.VERSION.SDK_INT >= 29) {
+            android.content.Intent(android.provider.Settings.Panel.ACTION_WIFI)
+        } else {
+            android.content.Intent(android.provider.Settings.ACTION_WIFI_SETTINGS)
+        }
+        runCatching { startActivity(intent) }
     }
 
     private fun onDisconnect() {
@@ -199,13 +255,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun requestNotificationPermission() {
+    private fun requestAutoPermissions() {
+        val wanted = mutableListOf<String>()
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
-            ActivityCompat.requestPermissions(
-                this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100
-            )
+            wanted += Manifest.permission.POST_NOTIFICATIONS
+        }
+        if (!WifiSuggestion.hasPermission(this)) {
+            wanted += WifiSuggestion.requiredPermission()
+        }
+        if (wanted.isNotEmpty()) {
+            ActivityCompat.requestPermissions(this, wanted.toTypedArray(), 100)
         }
     }
 }

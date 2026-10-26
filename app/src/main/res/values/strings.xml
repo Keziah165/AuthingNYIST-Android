@@ -9,6 +9,7 @@
     <string name="password_label">密码</string>
 
     <string name="auto_keep_online">自动保持在线（连上校园网自动认证并保活）</string>
+    <string name="auto_wifi_hint">开启后会把校园网（含账号密码）交给系统托管：首次在弹窗里允许一次，之后断网、凌晨断连、离开学校再回来都会自动重连并认证，无需手动输入。</string>
 
     <string name="btn_connect">连接</string>
     <string name="btn_disconnect">断开认证</string>

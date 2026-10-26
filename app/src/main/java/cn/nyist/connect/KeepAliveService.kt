@@ -82,9 +82,10 @@ class KeepAliveService : Service() {
             if (Build.VERSION.SDK_INT >= 30) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0
         )
         try {
+            // 同 App：不能要求 NET_CAPABILITY_INTERNET，校园网认证前不具备该能力
             cm?.registerNetworkCallback(
                 android.net.NetworkRequest.Builder()
-                    .addCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    .addTransportType(android.net.NetworkCapabilities.TRANSPORT_WIFI)
                     .build(),
                 networkCallback
             )
