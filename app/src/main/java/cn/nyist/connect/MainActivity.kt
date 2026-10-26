@@ -127,12 +127,12 @@ class MainActivity : AppCompatActivity() {
             // 开启自动保持在线时，先把校园网交给系统托管，断连/回到学校由系统自动入网
             if (cur.autoConnect && WifiSuggestion.hasPermission(this@MainActivity)) {
                 WifiSuggestion.apply(this@MainActivity, cur)?.let {
-                    return@doWork Result.failure(IllegalStateException(it))
+                    return@doWork Result.failure<Nothing>(IllegalStateException(it))
                 }
             }
             if (!hasWifiNetwork() && !waitForWifi(10_000)) {
                 withContext(Dispatchers.Main) { openWifiPanel() }
-                return@doWork Result.failure(
+                return@doWork Result.failure<Nothing>(
                     IllegalStateException("已打开 Wi-Fi 设置，请连接校园网 nyist-tec 后会自动认证")
                 )
             }
