@@ -41,8 +41,17 @@ class MainActivity : AppCompatActivity() {
         b.networkSpinner.setSelection(networks.indexOf(cfg.network).coerceAtLeast(0))
         b.etUsername.setText(cfg.username)
         b.etPassword.setText(cfg.password)
+        b.etHost.setText(cfg.host)
+        b.etAcId.setText(cfg.acId)
         // 旧配置可能只开了部分自动化，这里合并为一个「自动保持在线」开关
         b.swAutoKeepOnline.isChecked = cfg.autoConnect || cfg.keepAlive || cfg.autoStart
+
+        // 高级设置展开/收起
+        b.layoutAdvanced.visibility = View.GONE
+        b.tvAdvancedToggle.setOnClickListener {
+            b.layoutAdvanced.visibility =
+                if (b.layoutAdvanced.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        }
 
         b.btnConnect.setOnClickListener { onConnect() }
         b.btnDisconnect.setOnClickListener { onDisconnect() }
@@ -90,6 +99,8 @@ class MainActivity : AppCompatActivity() {
     private fun configFromUi(): Srun.Config {
         val pos = b.networkSpinner.selectedItemPosition
         val auto = b.swAutoKeepOnline.isChecked
+        val host = b.etHost.text?.toString()?.trim().orEmpty().ifEmpty { Srun.DEFAULT_HOST }
+        val acId = b.etAcId.text?.toString()?.trim().orEmpty().ifEmpty { Srun.DEFAULT_AC_ID }
         val cfg = Srun.Config(
             network = networks[if (pos in networks.indices) pos else 0],
             username = b.etUsername.text?.toString()?.trim().orEmpty(),
@@ -97,6 +108,8 @@ class MainActivity : AppCompatActivity() {
             autoConnect = auto,
             autoStart = auto,
             keepAlive = auto,
+            host = host,
+            acId = acId,
         )
         ConfigStore.save(this, cfg) // 保存前会校验，非法配置抛 IllegalArgumentException
         return cfg

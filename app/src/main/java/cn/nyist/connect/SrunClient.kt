@@ -10,11 +10,11 @@ import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * NYIST 校园网 srun（深澜）认证协议的 Kotlin 实现。
+ * NYIST ??? srun(??)????? Kotlin ???
  *
- * 移植自 GUYU2233/AuthingNYIST（internal/app/portal.go 与 libauth 包），
- * 上游协议实现源自 Palvef/AuthingNYIST，灵感来自 z4yx/GoAuthing。
- * 本项目遵循 GPL-3.0 许可证。
+ * ??? GUYU2233/AuthingNYIST(internal/app/portal.go ? libauth ?),
+ * ???????? Palvef/AuthingNYIST,???? z4yx/GoAuthing?
+ * ????? GPL-3.0 ????
  */
 object Srun {
 
@@ -26,9 +26,9 @@ object Srun {
     private const val CALLBACK = "authing_callback"
     private const val USER_AGENT = "AuthingNYIST-Android"
     private const val TIMEOUT_MS = 12_000
-    private const val DELTA = -1640531527 // 0x9E3779B9 的 32 位有符号表示
+    private const val DELTA = -1640531527 // 0x9E3779B9 ? 32 ??????
 
-    /** 错误类别：NETWORK 为暂时性失败；CREDENTIALS / OTHER_ACCOUNT 为终止性失败。 */
+    /** ????:NETWORK ??????;CREDENTIALS / OTHER_ACCOUNT ??????? */
     enum class ErrorKind { NETWORK, CREDENTIALS, OTHER_ACCOUNT }
 
     class AuthException(message: String, val kind: ErrorKind = ErrorKind.NETWORK) : Exception(message)
@@ -55,7 +55,7 @@ object Srun {
     )
 
     // ------------------------------------------------------------------
-    // 配置校验（对应 config.go Validate）
+    // ????(?? config.go Validate)
     // ------------------------------------------------------------------
 
     fun hostUrl(h: String): String {
@@ -64,29 +64,29 @@ object Srun {
     }
 
     fun validate(cfg: Config) {
-        require(cfg.network == NETWORK_TEC || cfg.network == NETWORK_STU) { "网络必须是 $NETWORK_TEC 或 $NETWORK_STU" }
+        require(cfg.network == NETWORK_TEC || cfg.network == NETWORK_STU) { "????? $NETWORK_TEC ? $NETWORK_STU" }
         if (cfg.username.isNotEmpty()) {
             require(cfg.username.trim() == cfg.username && cfg.username.none { it == ' ' || it == '\t' || it == '\r' || it == '\n' }) {
-                "账号不能包含空白字符"
+                "??????????"
             }
             require(cfg.username.count { it == '@' } <= 1 && !cfg.username.startsWith("@") && !cfg.username.endsWith("@")) {
-                "账号域名格式不正确"
+                "?????????"
             }
         }
-        require(cfg.password.none { it == '\r' || it == '\n' || it == '\u0000' }) { "密码包含非法字符" }
+        require(cfg.password.none { it == '\r' || it == '\n' || it == '\u0000' }) { "????????" }
         val u = runCatching { URI(hostUrl(cfg.host)) }.getOrNull()
         require(u != null && u.host != null && (u.scheme == "http" || u.scheme == "https") &&
             u.userInfo == null && (u.path == null || u.path == "/" || u.path.isEmpty()) &&
             u.query == null && u.fragment == null
-        ) { "服务器地址必须是合法的 HTTP(S) 来源，不含路径、参数或片段" }
-        require((cfg.acId.toIntOrNull() ?: 0) > 0) { "acId 必须是正整数" }
+        ) { "??????????? HTTP(S) ??,??????????" }
+        require((cfg.acId.toIntOrNull() ?: 0) > 0) { "acId ??????" }
     }
 
     // ------------------------------------------------------------------
-    // 对外操作（对应 portal.go 的 Check / Connect / Disconnect）
+    // ????(?? portal.go ? Check / Connect / Disconnect)
     // ------------------------------------------------------------------
 
-    /** 检查在线状态。 */
+    /** ??????? */
     fun check(cfg: Config): Status {
         validate(cfg)
         val r = portalGet(cfg.host, "/cgi-bin/rad_user_info", emptyMap())
@@ -97,64 +97,64 @@ object Srun {
         return when {
             err == "ok" && user.isNotEmpty() -> {
                 val same = sameAccount(cfg.username, user, r.optString("domain"))
-                Status(same, user, ip, if (same) "已连接" else "其他账号在线", r.optString("domain"))
+                Status(same, user, ip, if (same) "???" else "??????", r.optString("domain"))
             }
             err == "not_online_error" || err == "not_online" || err == "offline" ->
-                Status(false, "", ip, "校园网未认证")
-            else -> throw AuthException("认证服务器未返回有效的在线状态")
+                Status(false, "", ip, "??????")
+            else -> throw AuthException("???????????????")
         }
     }
 
     /**
-     * 状态诊断（对应上游 v1.1.1 的 InspectStatus，只读、不做任何连接/注销）：
-     * 区分「本机未连接网络」「本机已联网但认证服务器不可达」与「校园网未认证」。
-     * Android 不读取 SSID（需要定位权限），Wi-Fi 一致性由用户自行确认。
+     * ????(???? v1.1.1 ? InspectStatus,?????????/??):
+     * ?????????????????????????????????????
+     * Android ??? SSID(??????),Wi-Fi ???????????
      *
-     * @param hasNetwork 调用方通过 ConnectivityManager 判断是否存在活动网络
+     * @param hasNetwork ????? ConnectivityManager ??????????
      */
     fun inspectStatus(cfg: Config, hasNetwork: Boolean): Status {
         validate(cfg)
         if (!hasNetwork) {
-            return Status(false, "", "", "未连接网络，请先连接校园 Wi-Fi 或有线网络")
+            return Status(false, "", "", "?????,?????? Wi-Fi ?????")
         }
         return try {
             check(cfg)
         } catch (e: Srun.AuthException) {
             if (e.kind == ErrorKind.CREDENTIALS || e.kind == ErrorKind.OTHER_ACCOUNT) throw e
-            throw AuthException("本机已联网，但校园认证状态不可达：${e.message}", ErrorKind.NETWORK)
+            throw AuthException("?????,??????????:${e.message}", ErrorKind.NETWORK)
         }
     }
 
     /**
-     * 认证（登录）。若发现其他账号在线则拒绝，避免误断他人会话。
-     * Android 上不切换 Wi-Fi，请先在系统设置中连上校园 Wi-Fi。
+     * ??(??)?????????????,?????????
+     * Android ???? Wi-Fi,???????????? Wi-Fi?
      */
     fun connect(cfg: Config): Status {
         validate(cfg)
-        require(cfg.hasCredentials()) { "请先填写账号和密码" }
+        require(cfg.hasCredentials()) { "?????????" }
         val s = check(cfg)
         if (!s.online && s.username.isNotEmpty()) {
-            throw AuthException("检测到其他账号在线（${s.username}），已停止以避免断开他人会话", ErrorKind.OTHER_ACCOUNT)
+            throw AuthException("?????????(${s.username}),????????????", ErrorKind.OTHER_ACCOUNT)
         }
         if (s.online) return s
         authenticate(cfg)
         val after = check(cfg)
-        if (!after.online) throw AuthException("认证请求已发送但账号未上线", ErrorKind.NETWORK)
+        if (!after.online) throw AuthException("?????????????", ErrorKind.NETWORK)
         return after
     }
 
     /**
-     * 注销（登出）。当前在线的是其他账号时拒绝。
-     * 对齐上游 v1.1.1 / 学校官方页面：使用在线会话的完整账号和 IP 发送注销，
-     * 不获取 challenge、不携带 password/info/chksum；服务器确认离线后才算成功。
+     * ??(??)???????????????
+     * ???? v1.1.1 / ??????:???????????? IP ????,
+     * ??? challenge???? password/info/chksum;?????????????
      */
     fun disconnect(cfg: Config) {
         validate(cfg)
-        require(cfg.username.isNotEmpty()) { "请先填写账号" }
+        require(cfg.username.isNotEmpty()) { "??????" }
         val s = check(cfg)
-        if (s.username.isEmpty()) return // 无人在线，无需注销
+        if (s.username.isEmpty()) return // ????,????
         if (!s.online) {
-            throw AuthException("当前在线的是其他账号（${s.username}），拒绝注销", ErrorKind.OTHER_ACCOUNT)
+            throw AuthException("??????????(${s.username}),????", ErrorKind.OTHER_ACCOUNT)
         }
         var username = s.username
         if (!username.contains('@') && s.domain.isNotEmpty()) {
@@ -165,22 +165,22 @@ object Srun {
             mapOf("action" to "logout", "username" to username, "ip" to s.ip, "ac_id" to cfg.acId)
         )
         if (r.optString("error") != "ok") {
-            throw AuthException("认证服务器拒绝了注销请求，会话可能仍在线")
+            throw AuthException("????????????,???????")
         }
-        // 不轻信注销成功：轮询确认本账号确实已离线
+        // ???????:????????????
         for (attempt in 0 until 4) {
             val st = check(cfg)
             if (st.username.isEmpty()) return
             if (!st.online) {
-                throw AuthException("当前在线的是其他账号（${st.username}），拒绝注销", ErrorKind.OTHER_ACCOUNT)
+                throw AuthException("??????????(${st.username}),????", ErrorKind.OTHER_ACCOUNT)
             }
             if (attempt < 3) Thread.sleep(500)
         }
-        throw AuthException("注销请求已发送，但账号仍在线")
+        throw AuthException("???????,??????")
     }
 
     // ------------------------------------------------------------------
-    // 认证请求（对应 portal.go 的 authenticate）
+    // ????(?? portal.go ? authenticate)
     // ------------------------------------------------------------------
 
     private fun authenticate(cfg: Config) {
@@ -189,15 +189,15 @@ object Srun {
             mapOf("username" to cfg.username, "ip" to "", "double_stack" to "1")
         )
         if (chall.optString("res") != "ok") {
-            throw AuthException("获取 challenge 失败：${chall.optString("res", "未知错误")}")
+            throw AuthException("?? challenge ??:${chall.optString("res", "????")}")
         }
         val token = chall.optString("challenge")
         val ip = chall.optString("client_ip")
-        if (token.length < 16 || ip.isEmpty()) throw AuthException("认证服务器 challenge 无效")
+        if (token.length < 16 || ip.isEmpty()) throw AuthException("????? challenge ??")
 
         val hmd5 = hmacMd5Hex(token, cfg.password)
-        // info JSON：键按字母序排列（与 Go json.Marshal 的 map 序列化一致），
-        // 字符串转义与 Go encoding/json 兼容（含 < > & 的 \u 转义）。
+        // info JSON:???????(? Go json.Marshal ? map ?????),
+        // ?????? Go encoding/json ??(? < > & ? \u ??)?
         val infoMap = linkedMapOf<String, String>()
         infoMap["acid"] = cfg.acId
         infoMap["enc_ver"] = "srun_bx1"
@@ -208,7 +208,7 @@ object Srun {
             "${goJsonString(it.key)}:${goJsonString(it.value)}"
         }
         val encoded = xEncode(infoJson.toByteArray(Charsets.UTF_8), token.toByteArray(Charsets.UTF_8))
-            ?: throw AuthException("无法编码认证请求")
+            ?: throw AuthException("????????")
         val info = "{SRBX1}" + quirkBase64(encoded)
 
         val q = linkedMapOf<String, String>()
@@ -227,14 +227,24 @@ object Srun {
 
         val resp = portalGet(cfg.host, "/cgi-bin/srun_portal", q)
         if (resp.optString("error") == "ok") return
-        // 所有拒绝均为终止性失败：不做自动重试，避免锁定账号或热循环。
+        // ???????????:??????,???????????
         val ecode = resp.optString("ecode")
-        val msg = PortalErrors.map[ecode] ?: resp.optString("error").ifEmpty { "认证被拒绝" }
-        throw AuthException(msg, ErrorKind.CREDENTIALS)
+        val rawError = resp.optString("error")
+        val mapped = PortalErrors.map[ecode]
+        // ?????????;????????? error ??;???????
+        // ???? ecode ? host,???? ac_id / ????????????
+        val detail = listOfNotNull(mapped, rawError.ifEmpty { null }).firstOrNull()
+            ?: "?????"
+        val suffix = buildString {
+            append("(???:").append(hostUrl(cfg.host)).append(",ac_id=").append(cfg.acId)
+            if (ecode.isNotEmpty()) append(",ecode=").append(ecode)
+            append(")")
+        }
+        throw AuthException(detail + suffix, ErrorKind.CREDENTIALS)
     }
 
     // ------------------------------------------------------------------
-    // HTTP（JSONP）
+    // HTTP(JSONP)
     // ------------------------------------------------------------------
 
     private fun portalGet(host: String, path: String, params: Map<String, String>): JSONObject {
@@ -251,11 +261,11 @@ object Srun {
             }
             val code = conn.responseCode
             if (code != HttpURLConnection.HTTP_OK) {
-                throw AuthException("认证服务器返回 HTTP $code")
+                throw AuthException("??????? HTTP $code")
             }
             val body = conn.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }.trim()
-            // 对齐上游 v1.1.1：部分 portal 版本对状态接口直接返回纯文本离线标记，
-            // 仅在只读状态接口接受；登录/注销响应绝不能用纯文本蒙混过关。
+            // ???? v1.1.1:?? portal ??????????????????,
+            // ??????????;??/????????????????
             if (path == "/cgi-bin/rad_user_info" && body == "not_online_error") {
                 return JSONObject().put("error", "not_online_error")
             }
@@ -263,7 +273,7 @@ object Srun {
         } catch (e: AuthException) {
             throw e
         } catch (e: Exception) {
-            throw AuthException("无法连接认证服务器（请确认已连上校园网）", ErrorKind.NETWORK)
+            throw AuthException("????????? ${hostUrl(host)}(?????????)", ErrorKind.NETWORK)
         } finally {
             conn?.disconnect()
         }
@@ -283,7 +293,7 @@ object Srun {
     private fun formEnc(s: String): String = URLEncoder.encode(s, "UTF-8")
 
     // ------------------------------------------------------------------
-    // 账号匹配（对应 portal.go sameAccount；基础名区分大小写，域名忽略大小写）
+    // ????(?? portal.go sameAccount;????????,???????)
     // ------------------------------------------------------------------
 
     private fun sameAccount(want: String, got: String, domain: String): Boolean {
@@ -299,7 +309,7 @@ object Srun {
     }
 
     // ------------------------------------------------------------------
-    // 密码学辅助
+    // ?????
     // ------------------------------------------------------------------
 
     private fun hmacMd5Hex(key: String, msg: String): String {
@@ -314,8 +324,8 @@ object Srun {
             .joinToString("") { "%02x".format(it.toInt() and 0xFF) }
 
     // ------------------------------------------------------------------
-    // srun 私有编码：QuirkBase64 与 XEncode（XXTEA）
-    // 移植自 libauth/coding.go，已用上游 coding_test.go 的全部 15 个向量验证。
+    // srun ????:QuirkBase64 ? XEncode(XXTEA)
+    // ??? libauth/coding.go,???? coding_test.go ??? 15 ??????
     // ------------------------------------------------------------------
 
     private const val B64_ALPHABET =
@@ -341,7 +351,7 @@ object Srun {
         return String(u)
     }
 
-    /** XXTEA 加密。str 非空时必返非空；保留可空返回以对齐上游语义。 */
+    /** XXTEA ???str ???????;?????????????? */
     fun xEncode(str: ByteArray, key: ByteArray): ByteArray? {
         if (str.isEmpty()) return ByteArray(0)
 
@@ -373,7 +383,7 @@ object Srun {
         var d = 0
         var q = 6 + 52 / (n + 1)
         while (q-- > 0) {
-            d += DELTA // Int 溢出自动回绕，等价于 Go 的 uint32 加法
+            d += DELTA // Int ??????,??? Go ? uint32 ??
             val e = (d ushr 2) and 3
             for (p in 0..n) {
                 y = if (p == n) v[0] else v[p + 1]
@@ -395,7 +405,7 @@ object Srun {
     }
 
     // ------------------------------------------------------------------
-    // Go 兼容的 JSON 字符串转义（encoding/json 默认会转义 < > & 与 U+2028/9）
+    // Go ??? JSON ?????(encoding/json ????? < > & ? U+2028/9)
     // ------------------------------------------------------------------
 
     private fun goJsonString(s: String): String {
