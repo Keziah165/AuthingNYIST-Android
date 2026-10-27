@@ -28,7 +28,7 @@
             android:text="@string/app_subtitle"
             android:textAppearance="?attr/textAppearanceBodySmall" />
 
-        <!-- ???? -->
+        <!-- 账号卡片 -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -94,7 +94,7 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- ?????? -->
+        <!-- 高级设置卡片 -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -164,7 +164,7 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- ??????? -->
+        <!-- 自动化开关卡片 -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -195,7 +195,7 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- ???? -->
+        <!-- 操作按钮 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -230,7 +230,7 @@
             android:layout_marginTop="4dp"
             android:text="@string/btn_check" />
 
-        <!-- ???? -->
+        <!-- 状态卡片 -->
         <com.google.android.material.card.MaterialCardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
