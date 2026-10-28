@@ -22,11 +22,12 @@ class WifiJobService : JobService() {
             return false
         }
         thread {
-            var result = false
             try {
-                val s = Srun.connect(cfg)
+                val cm = getSystemService(android.net.ConnectivityManager::class.java)
+                val net = CampusNetwork.findWifi(cm)
+                val s = Srun.connect(cfg, net)
                 Log.i(TAG, "auto connect ok: ${s.username}")
-                result = true
+                if (net != null) CampusNetwork.markOnline(cm, net)
                 if (cfg.keepAlive) {
                     KeepAliveService.start(this)
                 }

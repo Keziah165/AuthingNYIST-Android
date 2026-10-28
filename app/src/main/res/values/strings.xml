@@ -14,7 +14,7 @@
     <string name="advanced_hint">通常无需修改。若认证一直失败，可在浏览器访问 1.1.1.1 查看实际跳转的认证地址，并把 ac_id 改成 URL 里 ac_id 参数的值。</string>
 
     <string name="auto_keep_online">自动保持在线（连上校园网自动认证并保活）</string>
-    <string name="auto_wifi_hint">开启后会把校园 Wi-Fi（开放网络）交给系统自动连接，账号密码仅保存在本应用内用于门户认证。首次在弹窗里允许一次，之后断网、凌晨断连、离开学校再回来都会自动重连并认证，无需手动输入。</string>
+    <string name="auto_wifi_hint">开启后会把校园 Wi-Fi（开放网络）交给系统自动连接，并在后台常驻认证：打开 Wi-Fi、进入校园网范围、凌晨断连后都会自动连上并认证，不需要再打开认证网页。请允许本应用自启动、并关闭省电限制，否则系统可能清理后台。</string>
 
     <string name="btn_connect">连接</string>
     <string name="btn_disconnect">断开认证</string>

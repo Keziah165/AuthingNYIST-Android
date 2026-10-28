@@ -3,7 +3,7 @@ package cn.nyist.connect
 import android.Manifest
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
+import android.net.Network
 import android.os.Build
 import android.os.Bundle
 import android.view.View
@@ -57,13 +57,18 @@ class MainActivity : AppCompatActivity() {
         b.btnDisconnect.setOnClickListener { onDisconnect() }
         b.btnCheck.setOnClickListener { onCheck() }
 
-        // 打开「自动保持在线」时立即把校园网交给系统托管（改密码后重新提交）
+        // 打开「自动保持在线」时立即把校园网交给系统托管，并常驻保活服务：
+        // 之后只要打开 Wi-Fi / 进入校园网范围，服务会被网络变化唤醒并自动认证。
         b.swAutoKeepOnline.setOnCheckedChangeListener { _, checked ->
-            if (!checked) return@setOnCheckedChangeListener
+            if (!checked) {
+                KeepAliveService.stop(this)
+                return@setOnCheckedChangeListener
+            }
             requestAutoPermissions()
             val c = runCatching { configFromUi() }.getOrNull() ?: return@setOnCheckedChangeListener
             if (c.hasCredentials()) {
                 Thread { WifiSuggestion.apply(this, c) }.start()
+                KeepAliveService.start(this)
             }
         }
 
@@ -83,10 +88,10 @@ class MainActivity : AppCompatActivity() {
         if (cfg.autoConnect && cfg.hasCredentials() && !autoConnectDone) {
             autoConnectDone = true
             Thread { WifiSuggestion.apply(this, cfg) }.start()
+            KeepAliveService.start(this) // 常驻服务会处理后续断连/重连
             if (hasWifiNetwork()) {
                 doWork {
-                    runCatching { Srun.connect(ConfigStore.load(this@MainActivity)) }
-                        .onSuccess { KeepAliveService.start(this@MainActivity) }
+                    runCatching { Srun.connect(ConfigStore.load(this@MainActivity), wifiNetwork()) }
                 }
             }
         }
@@ -146,22 +151,23 @@ class MainActivity : AppCompatActivity() {
             if (!hasWifiNetwork() && !waitForWifi(10_000)) {
                 withContext(Dispatchers.Main) { openWifiPanel() }
                 return@doWork Result.failure<Nothing>(
-                    IllegalStateException("已打开 Wi-Fi 设置，请连接校园网 nyist-tec 后会自动认证")
+                    IllegalStateException("已打开 Wi-Fi 设置，连接校园网后会自动认证")
                 )
             }
-            val s = Srun.connect(cur)
+            val net = wifiNetwork()
+            val s = Srun.connect(cur, net)
+            if (net != null) CampusNetwork.markOnline(getSystemService(ConnectivityManager::class.java), net)
             if (cur.autoConnect) KeepAliveService.start(this@MainActivity)
             Result.success(s)
         }
     }
 
-    /** 是否存在已关联的 Wi-Fi（认证前没有互联网，不能用 INTERNET 能力判断）。 */
-    private fun hasWifiNetwork(): Boolean {
-        val cm = getSystemService(ConnectivityManager::class.java) ?: return false
-        val net = cm.activeNetwork ?: return false
-        val caps = cm.getNetworkCapabilities(net) ?: return false
-        return caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
-    }
+    /** 当前关联的 Wi-Fi 网络；未连 Wi-Fi 时为 null。 */
+    private fun wifiNetwork(): Network? =
+        CampusNetwork.findWifi(getSystemService(ConnectivityManager::class.java))
+
+    /** 是否已关联 Wi-Fi（认证前没有互联网，不能用 activeNetwork/INTERNET 能力判断）。 */
+    private fun hasWifiNetwork(): Boolean = wifiNetwork() != null
 
     /** 等系统把建议网络连上（自动入网通常需要几秒）。 */
     private suspend fun waitForWifi(timeoutMs: Long): Boolean {
@@ -200,7 +206,7 @@ class MainActivity : AppCompatActivity() {
             .setNegativeButton(R.string.dialog_cancel, null)
             .setPositiveButton(R.string.dialog_ok) { _, _ ->
                 doWork(successFallback = "已断开认证") {
-                    runCatching { Srun.disconnect(ConfigStore.load(this@MainActivity)) }
+                    runCatching { Srun.disconnect(ConfigStore.load(this@MainActivity), wifiNetwork()) }
                         .onSuccess { KeepAliveService.stop(this@MainActivity) }
                 }
             }
@@ -211,17 +217,9 @@ class MainActivity : AppCompatActivity() {
         saveUiQuietly()
         doWork {
             runCatching {
-                Srun.inspectStatus(ConfigStore.load(this@MainActivity), hasActiveNetwork())
+                Srun.inspectStatus(ConfigStore.load(this@MainActivity), hasWifiNetwork(), wifiNetwork())
             }
         }
-    }
-
-    /** 是否存在活动网络（含未通过认证的校园网），用于区分「没连网」和「portal 不可达」。 */
-    private fun hasActiveNetwork(): Boolean {
-        val cm = getSystemService(ConnectivityManager::class.java) ?: return false
-        val net = cm.activeNetwork ?: return false
-        val caps = cm.getNetworkCapabilities(net) ?: return false
-        return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
     // ------------------------------------------------------------------

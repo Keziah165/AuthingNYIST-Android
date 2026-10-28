@@ -1,5 +1,6 @@
 package cn.nyist.connect
 
+import android.net.Network
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URI
@@ -86,10 +87,15 @@ object Srun {
     // 对外操作（对应 portal.go 的 Check / Connect / Disconnect）
     // ------------------------------------------------------------------
 
-    /** 检查在线状态。 */
-    fun check(cfg: Config): Status {
+    /**
+     * 检查在线状态。
+     *
+     * @param network 绑定到校园 Wi-Fi 的 Network；不传则走系统默认网络
+     *                （同时开着移动数据时默认网络是移动数据，必须传）
+     */
+    fun check(cfg: Config, network: Network? = null): Status {
         validate(cfg)
-        val r = portalGet(cfg.host, "/cgi-bin/rad_user_info", emptyMap())
+        val r = portalGet(cfg.host, "/cgi-bin/rad_user_info", emptyMap(), network)
         val err = r.optString("error")
         val user = r.optString("user_name")
         var ip = r.optString("online_ip")
@@ -112,13 +118,13 @@ object Srun {
      *
      * @param hasNetwork 调用方通过 ConnectivityManager 判断是否存在活动网络
      */
-    fun inspectStatus(cfg: Config, hasNetwork: Boolean): Status {
+    fun inspectStatus(cfg: Config, hasNetwork: Boolean, network: Network? = null): Status {
         validate(cfg)
         if (!hasNetwork) {
             return Status(false, "", "", "未连接网络，请先连接校园 Wi-Fi 或有线网络")
         }
         return try {
-            check(cfg)
+            check(cfg, network)
         } catch (e: Srun.AuthException) {
             if (e.kind == ErrorKind.CREDENTIALS || e.kind == ErrorKind.OTHER_ACCOUNT) throw e
             throw AuthException("本机已联网，但校园认证状态不可达：${e.message}", ErrorKind.NETWORK)
@@ -129,16 +135,16 @@ object Srun {
      * 认证（登录）。若发现其他账号在线则拒绝，避免误断他人会话。
      * Android 上不切换 Wi-Fi，请先在系统设置中连上校园 Wi-Fi。
      */
-    fun connect(cfg: Config): Status {
+    fun connect(cfg: Config, network: Network? = null): Status {
         validate(cfg)
         require(cfg.hasCredentials()) { "请先填写账号和密码" }
-        val s = check(cfg)
+        val s = check(cfg, network)
         if (!s.online && s.username.isNotEmpty()) {
             throw AuthException("检测到其他账号在线（${s.username}），已停止以避免断开他人会话", ErrorKind.OTHER_ACCOUNT)
         }
         if (s.online) return s
-        authenticate(cfg)
-        val after = check(cfg)
+        authenticate(cfg, network)
+        val after = check(cfg, network)
         if (!after.online) throw AuthException("认证请求已发送但账号未上线", ErrorKind.NETWORK)
         return after
     }
@@ -148,10 +154,10 @@ object Srun {
      * 对齐上游 v1.1.1 / 学校官方页面：使用在线会话的完整账号和 IP 发送注销，
      * 不获取 challenge、不携带 password/info/chksum；服务器确认离线后才算成功。
      */
-    fun disconnect(cfg: Config) {
+    fun disconnect(cfg: Config, network: Network? = null) {
         validate(cfg)
         require(cfg.username.isNotEmpty()) { "请先填写账号" }
-        val s = check(cfg)
+        val s = check(cfg, network)
         if (s.username.isEmpty()) return // 无人在线，无需注销
         if (!s.online) {
             throw AuthException("当前在线的是其他账号（${s.username}），拒绝注销", ErrorKind.OTHER_ACCOUNT)
@@ -162,14 +168,15 @@ object Srun {
         }
         val r = portalGet(
             cfg.host, "/cgi-bin/srun_portal",
-            mapOf("action" to "logout", "username" to username, "ip" to s.ip, "ac_id" to cfg.acId)
+            mapOf("action" to "logout", "username" to username, "ip" to s.ip, "ac_id" to cfg.acId),
+            network
         )
         if (r.optString("error") != "ok") {
             throw AuthException("认证服务器拒绝了注销请求，会话可能仍在线")
         }
         // 不轻信注销成功：轮询确认本账号确实已离线
         for (attempt in 0 until 4) {
-            val st = check(cfg)
+            val st = check(cfg, network)
             if (st.username.isEmpty()) return
             if (!st.online) {
                 throw AuthException("当前在线的是其他账号（${st.username}），拒绝注销", ErrorKind.OTHER_ACCOUNT)
@@ -183,10 +190,11 @@ object Srun {
     // 认证请求（对应 portal.go 的 authenticate）
     // ------------------------------------------------------------------
 
-    private fun authenticate(cfg: Config) {
+    private fun authenticate(cfg: Config, network: Network?) {
         val chall = portalGet(
             cfg.host, "/cgi-bin/get_challenge",
-            mapOf("username" to cfg.username, "ip" to "", "double_stack" to "1")
+            mapOf("username" to cfg.username, "ip" to "", "double_stack" to "1"),
+            network
         )
         if (chall.optString("res") != "ok") {
             throw AuthException("获取 challenge 失败：${chall.optString("res", "未知错误")}")
@@ -225,7 +233,7 @@ object Srun {
         q["info"] = info
         q["chksum"] = sha1Hex(sum)
 
-        val resp = portalGet(cfg.host, "/cgi-bin/srun_portal", q)
+        val resp = portalGet(cfg.host, "/cgi-bin/srun_portal", q, network)
         if (resp.optString("error") == "ok") return
         // 所有拒绝均为终止性失败：不做自动重试，避免锁定账号或热循环。
         val ecode = resp.optString("ecode")
@@ -247,18 +255,26 @@ object Srun {
     // HTTP（JSONP）
     // ------------------------------------------------------------------
 
-    private fun portalGet(host: String, path: String, params: Map<String, String>): JSONObject {
+    private fun portalGet(
+        host: String,
+        path: String,
+        params: Map<String, String>,
+        network: Network? = null,
+    ): JSONObject {
         val query = params.entries.joinToString("&") { "${formEnc(it.key)}=${formEnc(it.value)}" }
         val sep = if (query.isEmpty()) "" else "&"
         val url = hostUrl(host) + path + "?" + query + sep + "callback=" + CALLBACK
         var conn: HttpURLConnection? = null
         try {
-            conn = (URL(url).openConnection() as HttpURLConnection).apply {
-                connectTimeout = TIMEOUT_MS
-                readTimeout = TIMEOUT_MS
-                instanceFollowRedirects = false
-                setRequestProperty("User-Agent", USER_AGENT)
-            }
+            val u = URL(url)
+            // 绑定到校园 Wi-Fi 的 Network：同时开着移动数据时默认网络是移动数据，
+            // 用默认网络发认证请求会走错出口（或直接被劫持），这里必须显式指定。
+            conn = (if (network != null) network.openConnection(u) else u.openConnection())
+                as HttpURLConnection
+            conn.connectTimeout = TIMEOUT_MS
+            conn.readTimeout = TIMEOUT_MS
+            conn.instanceFollowRedirects = false
+            conn.setRequestProperty("User-Agent", USER_AGENT)
             val code = conn.responseCode
             if (code != HttpURLConnection.HTTP_OK) {
                 throw AuthException("认证服务器返回 HTTP $code")
